@@ -2,6 +2,8 @@ import argparse
 from PIL import Image
 import numpy as np
 
+Image.MAX_IMAGE_PIXELS = None
+
 def show_diff_image(img1_path, img2_path, diff_path='diff.png'):
     img1 = np.array(Image.open(img1_path).convert('RGB'))
     img2 = np.array(Image.open(img2_path).convert('RGB'))

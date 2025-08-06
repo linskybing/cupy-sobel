@@ -1,15 +1,14 @@
 import time
+import sys
 import numpy as np
 import cupy as cp
-from cupyx.scipy.ndimage import correlate
+from cupyx.scipy.ndimage import convolve
 from PIL import Image
 
-MASK_N = 2
-MASK_X = 5
-MASK_Y = 5
-SCALE = 8
+Image.MAX_IMAGE_PIXELS = None
 
-mask = np.array([
+# 5x5 Sobel masks for X and Y gradient detection
+SOBEL_MASKS = np.array([
     [[ -1, -4, -6, -4, -1],
      [ -2, -8,-12, -8, -2],
      [  0,  0,  0,  0,  0],
@@ -23,40 +22,38 @@ mask = np.array([
      [ -1, -2,  0,  2,  1]]
 ], dtype=np.float32)
 
-def sobel_cupy(image: np.ndarray) -> np.ndarray:
-    image_bgr = image[..., ::-1]
-    image_gpu = cp.asarray(image_bgr, dtype=cp.float32)
-    mask_gpu = cp.asarray(mask)
+SCALE = 8.0
 
-    channels = []
+def sobel_cupy(image_np: np.ndarray) -> np.ndarray:
+    image_rgb = image_np.astype(np.float32)
+
+    image_gpu = cp.asarray(image_rgb)
+    masks_gpu = cp.asarray(SOBEL_MASKS)
+
+    result_channels = []
+
     for c in range(3):
-        conv_results = []
-        for i in range(MASK_N):
-            conv = correlate(image_gpu[:, :, c], mask_gpu[i], mode='reflect')
-            conv_results.append(conv)
-        total = cp.sqrt(conv_results[0]**2 + conv_results[1]**2) / SCALE
-        total = cp.clip(total, 0, 255)
-        channels.append(total)
+        grad_x = convolve(image_gpu[:, :, c], masks_gpu[0], mode='constant', cval=0.0)
+        grad_y = convolve(image_gpu[:, :, c], masks_gpu[1], mode='constant', cval=0.0)
+        gradient = cp.sqrt(grad_x ** 2 + grad_y ** 2) / SCALE
+        gradient = cp.clip(gradient, 0, 255)
+        result_channels.append(gradient)
 
-    output_bgr = cp.stack(channels, axis=-1)
-    output_rgb = output_bgr[..., ::-1]
-    return cp.asnumpy(output_rgb.astype(cp.uint8))
+    result_rgb = cp.stack(result_channels, axis=-1).astype(cp.uint8)
+    return cp.asnumpy(result_rgb)
 
-def main(input_path, output_path):
+def main(input_path: str, output_path: str):
     img = Image.open(input_path).convert('RGB')
     img_np = np.array(img)
 
-    start_time = time.time()
-    result_np = sobel_cupy(img_np)
-    end_time = time.time()
+    start = time.time()
+    result = sobel_cupy(img_np)
+    end = time.time()
 
-    result_img = Image.fromarray(result_np)
-    result_img.save(output_path)
-
-    print(f"[Cupy] Sobel filter took {end_time - start_time:.4f} seconds, output saved to {output_path}")
+    Image.fromarray(result).save(output_path)
+    print(f"[CuPy] Sobel 5x5 filter took {end - start:.4f} seconds, saved to {output_path}")
 
 if __name__ == '__main__':
-    import sys
     if len(sys.argv) != 3:
         print("Usage: python sobel.py input.png output.png")
     else:

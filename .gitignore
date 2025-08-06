@@ -1,3 +1,4 @@
 testcases/
 sobel
+sobel_raw.py
 *.png
